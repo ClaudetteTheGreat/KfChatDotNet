@@ -168,6 +168,15 @@ public class TestBotFixture : IDisposable
         // Clear all wagers
         db.Wagers.RemoveRange(db.Wagers);
 
+        // Clear all transactions
+        db.Transactions.RemoveRange(db.Transactions);
+
+        // Clear all moms
+        db.Moms.RemoveRange(db.Moms);
+
+        // Clear all juicers
+        db.Juicers.RemoveRange(db.Juicers);
+
         // Reset gambler balance
         var gambler = db.Gamblers.Include(g => g.User).FirstOrDefault(g => g.User.KfId == TestUserKfId);
         if (gambler != null)
@@ -176,6 +185,216 @@ public class TestBotFixture : IDisposable
             gambler.TotalWagered = 0;
         }
 
+        db.SaveChanges();
+    }
+
+    /// <summary>
+    /// Create an additional test user for multi-user tests
+    /// </summary>
+    public (int userId, int kfId, string username) CreateAdditionalUser(string username, UserRight userRight = UserRight.TrueAndHonest, bool createGambler = false)
+    {
+        using var db = new ApplicationDbContext();
+
+        var kfId = new Random().Next(100000, 999999);
+        var user = new UserDbModel
+        {
+            KfId = kfId,
+            KfUsername = username,
+            UserRight = userRight,
+            Ignored = false
+        };
+        db.Users.Add(user);
+        db.SaveChanges();
+
+        if (createGambler)
+        {
+            var gambler = new GamblerDbModel
+            {
+                User = user,
+                Balance = 10_000m, // 10K starting balance for additional users
+                TotalWagered = 0,
+                RandomSeed = Guid.NewGuid().ToString(),
+                NextVipLevelWagerRequirement = Money.VipLevels[0].BaseWagerRequirement,
+                State = GamblerState.Active,
+                Created = DateTimeOffset.UtcNow
+            };
+            db.Gamblers.Add(gambler);
+            db.SaveChanges();
+        }
+
+        return (user.Id, kfId, username);
+    }
+
+    /// <summary>
+    /// Set the user right for the test user
+    /// </summary>
+    public void SetTestUserRight(UserRight userRight)
+    {
+        using var db = new ApplicationDbContext();
+        var user = db.Users.FirstOrDefault(u => u.KfId == TestUserKfId);
+        if (user != null)
+        {
+            user.UserRight = userRight;
+            db.SaveChanges();
+        }
+    }
+
+    /// <summary>
+    /// Get the user right for the test user
+    /// </summary>
+    public UserRight GetTestUserRight()
+    {
+        using var db = new ApplicationDbContext();
+        var user = db.Users.FirstOrDefault(u => u.KfId == TestUserKfId);
+        return user?.UserRight ?? UserRight.Guest;
+    }
+
+    /// <summary>
+    /// Get all moms from the database
+    /// </summary>
+    public List<MomDbModel> GetAllMoms()
+    {
+        using var db = new ApplicationDbContext();
+        return db.Moms.Include(m => m.User).ToList();
+    }
+
+    /// <summary>
+    /// Get mom count from the database
+    /// </summary>
+    public int GetMomCount()
+    {
+        using var db = new ApplicationDbContext();
+        return db.Moms.Count();
+    }
+
+    /// <summary>
+    /// Add a mom entry for testing
+    /// </summary>
+    public void AddMom(DateTimeOffset time)
+    {
+        using var db = new ApplicationDbContext();
+        var user = db.Users.First(u => u.KfId == TestUserKfId);
+        db.Moms.Add(new MomDbModel { User = user, Time = time });
+        db.SaveChanges();
+    }
+
+    /// <summary>
+    /// Get all juicers from the database
+    /// </summary>
+    public List<JuicerDbModel> GetAllJuicers()
+    {
+        using var db = new ApplicationDbContext();
+        return db.Juicers.Include(j => j.User).ToList();
+    }
+
+    /// <summary>
+    /// Add a juicer entry for testing
+    /// </summary>
+    public void AddJuicer(int userKfId, float amount)
+    {
+        using var db = new ApplicationDbContext();
+        var user = db.Users.First(u => u.KfId == userKfId);
+        db.Juicers.Add(new JuicerDbModel
+        {
+            User = user,
+            Amount = amount,
+            JuicedAt = DateTimeOffset.UtcNow
+        });
+        db.SaveChanges();
+    }
+
+    /// <summary>
+    /// Get all users from the database
+    /// </summary>
+    public List<UserDbModel> GetAllUsers()
+    {
+        using var db = new ApplicationDbContext();
+        return db.Users.ToList();
+    }
+
+    /// <summary>
+    /// Get a user by username
+    /// </summary>
+    public UserDbModel? GetUserByUsername(string username)
+    {
+        using var db = new ApplicationDbContext();
+        return db.Users.FirstOrDefault(u => u.KfUsername == username);
+    }
+
+    /// <summary>
+    /// Get all transactions from the database
+    /// </summary>
+    public List<TransactionDbModel> GetAllTransactions()
+    {
+        using var db = new ApplicationDbContext();
+        return db.Transactions.Include(t => t.Gambler).ThenInclude(g => g.User).ToList();
+    }
+
+    /// <summary>
+    /// Get transactions of a specific type
+    /// </summary>
+    public List<TransactionDbModel> GetTransactionsByType(TransactionSourceEventType eventType)
+    {
+        using var db = new ApplicationDbContext();
+        return db.Transactions
+            .Include(t => t.Gambler).ThenInclude(g => g.User)
+            .Where(t => t.EventSource == eventType)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Get the gambler entity for a specific user
+    /// </summary>
+    public GamblerDbModel? GetGambler(int userKfId)
+    {
+        using var db = new ApplicationDbContext();
+        return db.Gamblers.Include(g => g.User).FirstOrDefault(g => g.User.KfId == userKfId);
+    }
+
+    /// <summary>
+    /// Set the test user's gambler balance
+    /// </summary>
+    public void SetGamblerBalance(decimal balance)
+    {
+        using var db = new ApplicationDbContext();
+        var gambler = db.Gamblers.Include(g => g.User).FirstOrDefault(g => g.User.KfId == TestUserKfId);
+        if (gambler != null)
+        {
+            gambler.Balance = balance;
+            db.SaveChanges();
+        }
+    }
+
+    /// <summary>
+    /// Set the test user's total wagered
+    /// </summary>
+    public void SetTotalWagered(decimal totalWagered)
+    {
+        using var db = new ApplicationDbContext();
+        var gambler = db.Gamblers.Include(g => g.User).FirstOrDefault(g => g.User.KfId == TestUserKfId);
+        if (gambler != null)
+        {
+            gambler.TotalWagered = totalWagered;
+            db.SaveChanges();
+        }
+    }
+
+    /// <summary>
+    /// Add a transaction for testing daily dollar / rakeback / lossback cooldowns
+    /// </summary>
+    public void AddTransaction(TransactionSourceEventType eventType, decimal effect, DateTimeOffset time)
+    {
+        using var db = new ApplicationDbContext();
+        var gambler = db.Gamblers.Include(g => g.User).First(g => g.User.KfId == TestUserKfId);
+        db.Transactions.Add(new TransactionDbModel
+        {
+            Gambler = gambler,
+            EventSource = eventType,
+            Time = time,
+            TimeUnixEpochSeconds = time.ToUnixTimeSeconds(),
+            Effect = effect,
+            NewBalance = gambler.Balance + effect
+        });
         db.SaveChanges();
     }
 
